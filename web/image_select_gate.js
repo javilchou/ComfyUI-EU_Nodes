@@ -31,17 +31,17 @@ function ensureStyles() {
     document.head.appendChild(style);
 }
 
-async function submitSelection(sessionId, selected, cancelled = false) {
+async function submitSelection(sessionId, selected, cancelled = false, timedOut = false) {
     const resp = await api.fetchApi("/eu_image_select_gate/continue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, selected, cancelled }),
+        body: JSON.stringify({ session_id: sessionId, selected, cancelled, timed_out: timedOut }),
     });
     if (!resp.ok) throw new Error(await resp.text());
     return await resp.json();
 }
 
-function showImageSelectGate({ session_id, images = [], batch_size = 0, timeout_sec = 600 }) {
+function showImageSelectGate({ session_id, images = [], batch_size = 0, timeout_sec = 600, wait_forever = false }) {
     ensureStyles();
     if (activeModal) activeModal.remove();
 
@@ -60,7 +60,10 @@ function showImageSelectGate({ session_id, images = [], batch_size = 0, timeout_
     titleWrap.innerHTML = `<div class="eu-gate-title">选择要继续处理的图片</div><div class="eu-gate-subtitle">点击图片选择/取消选择，点击继续后后面的工作流才会开始。</div>`;
     const stats = document.createElement("div");
     stats.className = "eu-gate-stats";
-    const updateStats = () => stats.textContent = `已选 ${selected.size} / ${batch_size}，剩余 ${remaining}s`;
+    const updateStats = () => {
+        const waitText = wait_forever ? "不限时等待" : `剩余 ${remaining}s`;
+        stats.textContent = `已选 ${selected.size} / ${batch_size}，${waitText}`;
+    };
     updateStats();
     header.append(titleWrap, stats);
 
@@ -111,7 +114,11 @@ function showImageSelectGate({ session_id, images = [], batch_size = 0, timeout_
     };
     main.append(
         btn("取消筛选", "danger", async () => {
-            try { await submitSelection(session_id, [], true); } catch (e) { console.error(e); }
+            if (!confirm("确定要取消筛选并中止当前工作流吗？")) return;
+            try {
+                await submitSelection(session_id, [], true);
+                alert("已取消操作，工作流已中止。");
+            } catch (e) { console.error(e); }
             close();
         }),
         btn("继续所选", "primary", async () => {
@@ -131,12 +138,20 @@ function showImageSelectGate({ session_id, images = [], batch_size = 0, timeout_
     document.body.appendChild(overlay);
     activeModal = overlay;
 
-    timer = setInterval(async () => {
-        remaining -= 1;
-        updateStats();
-        if (remaining <= 0) {
-            try { await submitSelection(session_id, [], true); } catch (e) { console.error(e); }
-            close();
-        }
-    }, 1000);
+    if (!wait_forever) {
+        timer = setInterval(async () => {
+            remaining -= 1;
+            updateStats();
+            if (remaining <= 0) {
+                try {
+                    await submitSelection(session_id, [], true, true);
+                    close();
+                    alert("等待选择超时，工作流已中止。");
+                } catch (e) {
+                    console.error(e);
+                    close();
+                }
+            }
+        }, 1000);
+    }
 }

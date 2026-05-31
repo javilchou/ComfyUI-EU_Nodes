@@ -7,6 +7,7 @@ import numpy as np
 from aiohttp import web
 from PIL import Image
 
+import comfy.model_management
 from server import PromptServer
 
 
@@ -42,6 +43,7 @@ async def eu_image_select_gate_continue(request):
         session_id = data.get("session_id")
         selected = data.get("selected", [])
         cancelled = bool(data.get("cancelled", False))
+        timed_out = bool(data.get("timed_out", False))
 
         with _pending_image_gates_lock:
             session = _pending_image_gates.get(session_id)
@@ -51,8 +53,14 @@ async def eu_image_select_gate_continue(request):
 
         session["selected"] = selected
         session["cancelled"] = cancelled
+        session["timed_out"] = timed_out
         session["event"].set()
-        return web.json_response({"ok": True, "selected": len(selected), "cancelled": cancelled})
+        return web.json_response({
+            "ok": True,
+            "selected": len(selected),
+            "cancelled": cancelled,
+            "timed_out": timed_out,
+        })
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
@@ -64,6 +72,7 @@ class EU_ImageSelectGate:
             "required": {
                 "images": ("IMAGE",),
                 "timeout_sec": ("INT", {"default": 600, "min": 30, "max": 86400, "step": 10}),
+                "取消等待时间": ("BOOLEAN", {"default": False, "label_on": "开启", "label_off": "关闭"}),
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
@@ -75,7 +84,7 @@ class EU_ImageSelectGate:
     RETURN_NAMES = ("images", "selection_info")
     FUNCTION = "select_images"
 
-    def select_images(self, images, timeout_sec: int, unique_id=None):
+    def select_images(self, images, timeout_sec: int, 取消等待时间=False, unique_id=None):
         batch_size = int(images.shape[0])
         if batch_size <= 0:
             raise ValueError("No upstream images found")
@@ -93,6 +102,7 @@ class EU_ImageSelectGate:
                 "event": event,
                 "selected": None,
                 "cancelled": False,
+                "timed_out": False,
             }
 
         PromptServer.instance.send_sync("eu_image_select_gate_show", {
@@ -101,21 +111,28 @@ class EU_ImageSelectGate:
             "images": thumbnails,
             "batch_size": batch_size,
             "timeout_sec": timeout_sec,
+            "wait_forever": bool(取消等待时间),
         })
 
-        print(f"[EU_ImageSelectGate] paused for selection: {session_id}, images={batch_size}")
-        event_set = event.wait(timeout=max(1, int(timeout_sec)))
+        wait_label = "no timeout" if 取消等待时间 else f"timeout={timeout_sec}s"
+        print(f"[EU_ImageSelectGate] waiting for selection: {session_id}, images={batch_size}, {wait_label}")
+        wait_timeout = None if 取消等待时间 else max(1, int(timeout_sec))
+        event_set = event.wait(timeout=wait_timeout)
 
         with _pending_image_gates_lock:
             result = _pending_image_gates.pop(session_id, None)
 
         if not event_set or result is None:
-            raise TimeoutError(f"EU_ImageSelectGate selection timed out after {timeout_sec}s")
+            print(f"[EU_ImageSelectGate] selection timed out, interrupting workflow: {session_id}")
+            raise comfy.model_management.InterruptProcessingException()
+
+        if result.get("timed_out"):
+            print(f"[EU_ImageSelectGate] selection timed out, interrupting workflow: {session_id}")
+            raise comfy.model_management.InterruptProcessingException()
 
         if result.get("cancelled"):
-            info = f"cancelled, passed all {batch_size} images"
-            print(f"[EU_ImageSelectGate] {info}")
-            return (images, info)
+            print(f"[EU_ImageSelectGate] selection cancelled, interrupting workflow: {session_id}")
+            raise comfy.model_management.InterruptProcessingException()
 
         selected = result.get("selected") or []
         selected = sorted({int(i) for i in selected if 0 <= int(i) < batch_size})
@@ -128,5 +145,5 @@ class EU_ImageSelectGate:
         return (selected_images, info)
 
     @classmethod
-    def IS_CHANGED(cls, images, timeout_sec):
+    def IS_CHANGED(cls, images, timeout_sec, 取消等待时间):
         return float("NaN")

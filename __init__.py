@@ -16,7 +16,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "EU_Base_Latent": "EU_基础潜空间",
-    "EU_ImageSelectGate": "EU_图片筛选暂停",
+    "EU_ImageSelectGate": "EU_图片筛选",
     "EU_TextReplacePlus": "EU_文本替换Plus",
 }
 
