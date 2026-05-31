@@ -113,7 +113,9 @@ class EU_ImageSelectGate:
             raise TimeoutError(f"EU_ImageSelectGate selection timed out after {timeout_sec}s")
 
         if result.get("cancelled"):
-            raise RuntimeError("EU_ImageSelectGate selection cancelled")
+            info = f"cancelled, passed all {batch_size} images"
+            print(f"[EU_ImageSelectGate] {info}")
+            return (images, info)
 
         selected = result.get("selected") or []
         selected = sorted({int(i) for i in selected if 0 <= int(i) < batch_size})

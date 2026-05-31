@@ -110,7 +110,7 @@ function showImageSelectGate({ session_id, images = [], batch_size = 0, timeout_
         activeModal = null;
     };
     main.append(
-        btn("取消流程", "danger", async () => {
+        btn("取消筛选", "danger", async () => {
             try { await submitSelection(session_id, [], true); } catch (e) { console.error(e); }
             close();
         }),
