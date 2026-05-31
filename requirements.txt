@@ -1,0 +1,2 @@
+# No extra pip dependencies.
+# Uses packages provided by ComfyUI: torch, numpy, Pillow, aiohttp.
