@@ -2,7 +2,7 @@
 
 个人自用的 ComfyUI 易用节点包，主要放一些日常工作流里会反复用到的小工具节点。
 
-当前节点包偏实用向：快速创建 latent、批量流程中人工筛图、提示词文本批量替换。
+当前节点包偏实用向：快速创建 latent、批量流程中人工筛图、提示词文本拼接和批量替换。
 
 ## 节点列表
 
@@ -73,6 +73,46 @@ EU_基础潜空间.width / height -> 需要尺寸输入的其他节点
 - 开启 `取消等待时间` 后不会自动超时，会一直阻塞直到你做出操作。
 - 没有选择任何图片时会报错，避免空 batch 继续往下游传。
 - 更新前端 JS 后，如果 ComfyUI 页面没变化，通常需要浏览器强制刷新。
+
+### EU_文本拼接Plus
+
+一个提示词文本拼接节点，默认只显示 4 行文本输入。填满或连接第 4 行后会显示第 5 行，继续填满或连接最后一行会继续展开，最多支持 20 行。
+
+输入参数：
+
+- `separator`：拼接符，默认 `,`。留空时会直接拼接文本。
+- `换行`：开启后在拼接符后额外加换行；如果 `separator` 为空，则只使用换行。
+- `跳过空行`：开启后忽略空行，并用拼接符/换行连接剩余文本。
+- `text1` 到 `text20`：需要拼接的文本，节点会按编号顺序拼接；可见行支持手填，也支持接入 `STRING`。
+
+空行逻辑：
+
+- 开启 `跳过空行` 时，空行不会参与输出。
+- 关闭 `跳过空行` 时，空行会同时跳过它所在位置的拼接符和换行。
+
+示例：
+
+```text
+separator = ,
+换行 = 关闭
+跳过空行 = 关闭
+text1 = aaa
+text2 = bbb
+text3 = ccc
+text4 = ddd
+text5 =
+text6 = fff
+text7 = ggg
+
+输出：
+aaa,bbb,ccc,dddfff,ggg
+```
+
+常见用法：
+
+```text
+多段提示词文本 -> EU_文本拼接Plus -> CLIP Text Encode
+```
 
 ### EU_文本替换Plus
 
@@ -154,9 +194,11 @@ ComfyUI-EU_Nodes/
   nodes/
     base_latent.py
     image_select_gate.py
+    TextConcatenator_Plus.py
     text_replace_plus.py
   web/
     image_select_gate.js
+    text_concatenator_plus.js
   requirements.txt
 ```
 
